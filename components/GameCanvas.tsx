@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useCallback } from 'react';
-import { GameState, Point, Snake, Food, NPCBehavior } from '../types';
+import { GameState, Point, Snake, Food, NPCBehavior, ControlMode } from '../types';
 import {
   MAP_WIDTH,
   MAP_HEIGHT,
@@ -32,9 +32,10 @@ interface GameCanvasProps {
   onGameOver: (finalScore: number) => void;
   onSnakesUpdate: (snakes: Snake[]) => void;
   zoomLevel: number;
+  controlMode: ControlMode;
 }
 
-const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesUpdate, zoomLevel }) => {
+const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesUpdate, zoomLevel, controlMode }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameLoopRef = useRef<number>(0);
 
@@ -49,7 +50,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
     },
     mousePos: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
     camera: { x: 0, y: 0 },
-    lastUpdateTime: performance.now()
+    lastUpdateTime: performance.now(),
+    joystick: {
+      active: false,
+      touchId: null as number | null,
+      base: { x: 0, y: 0 },
+      knob: { x: 0, y: 0 },
+      baseRadius: 60,
+      knobRadius: 25,
+    }
   });
 
   const getRandomColor = () => `hsl(${Math.random() * 360}, 100%, 70%)`;
@@ -137,7 +146,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
       }
     }
   
-    // Change behavior periodically or if current goal is met
     if (now - npc.lastBehaviorChange > NPC_BEHAVIOR_CHANGE_INTERVAL || !npc.behaviorTarget) {
       npc.lastBehaviorChange = now;
       npc.behaviorTarget = null;
@@ -189,20 +197,23 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
   };
 
   const update = (deltaTime: number) => {
-    const { player, snakes, mousePos } = gameStateRef.current;
+    const { player, snakes, mousePos, joystick } = gameStateRef.current;
     if (!player) return;
 
     const now = performance.now();
 
-    const canvas = canvasRef.current;
-    if (canvas) {
-        const rect = canvas.getBoundingClientRect();
-        const screenPlayerHead = { 
-            x: rect.width / 2, 
-            y: rect.height / 2
-        };
-        player.targetAngle = Math.atan2(mousePos.y - screenPlayerHead.y, mousePos.x - screenPlayerHead.x);
+    if (controlMode === ControlMode.POINTER) {
+        const canvas = canvasRef.current;
+        if (canvas) {
+            const rect = canvas.getBoundingClientRect();
+            const screenPlayerHead = { x: rect.width / 2, y: rect.height / 2 };
+            player.targetAngle = Math.atan2(mousePos.y - screenPlayerHead.y, mousePos.x - screenPlayerHead.x);
+        }
+    } else if (controlMode === ControlMode.TOUCH && joystick.active) {
+        const angle = Math.atan2(joystick.knob.y - joystick.base.y, joystick.knob.x - joystick.base.x);
+        player.targetAngle = angle;
     }
+
 
     snakes.forEach(snake => {
         if (!snake.isPlayer) {
@@ -326,6 +337,21 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
         }, 3000);
     }
   };
+  
+  const drawJoystick = (ctx: CanvasRenderingContext2D) => {
+    const { joystick } = gameStateRef.current;
+    if (!joystick.base.x) return; // Don't draw if not initialized
+
+    ctx.beginPath();
+    ctx.arc(joystick.base.x, joystick.base.y, joystick.baseRadius, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(joystick.knob.x, joystick.knob.y, joystick.knobRadius, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.fill();
+  };
 
   const draw = () => {
     const canvas = canvasRef.current;
@@ -349,7 +375,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
     ctx.scale(zoomLevel, zoomLevel);
     ctx.translate(-camera.x, -camera.y);
 
-    // Draw parallax starfield
     const drawStars = (starLayer: Point[], factor: number, color: string, size: number) => {
         ctx.fillStyle = color;
         starLayer.forEach(star => {
@@ -362,8 +387,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
     drawStars(stars.mid, 0.2, 'rgba(255, 255, 255, 0.6)', 2);
     drawStars(stars.near, 0.3, 'rgba(255, 255, 255, 0.8)', 3);
 
-
-    // Draw faint grid
     const gridSize = 100;
     ctx.strokeStyle = "rgba(100, 100, 255, 0.05)";
     ctx.lineWidth = 2 / zoomLevel;
@@ -374,7 +397,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MAP_WIDTH, y); ctx.stroke();
     }
 
-    // Draw food
     food.forEach(f => {
         let radius = f.radius;
         let alpha = 1.0;
@@ -382,7 +404,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
             const age = now - f.creationTime;
             if(age < 500) {
                 const progress = age / 500;
-                radius = f.radius * (1 + 2 * (1-progress)); // start big
+                radius = f.radius * (1 + 2 * (1-progress));
                 alpha = progress;
             } else {
                 f.isNew = false;
@@ -397,25 +419,23 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
         ctx.globalAlpha = alpha;
         ctx.fillStyle = f.color;
         ctx.shadowColor = f.color;
-        ctx.shadowBlur = 15;
+        ctx.shadowBlur = 10; // Reduced from 15
         ctx.fill();
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 1.0;
     });
 
-    // Draw snakes
     snakes.forEach(snake => {
         if (!snake.body.length) return;
         const baseRadius = SNAKE_HEAD_RADIUS + snake.score * SNAKE_SCORE_TO_RADIUS_RATIO;
         
         ctx.shadowColor = snake.color;
-        ctx.shadowBlur = 20;
+        ctx.shadowBlur = 12; // Reduced from 20
 
         for (let i = snake.body.length - 1; i >= 0; i--) {
             const segment = snake.body[i];
             const radius = i === 0 ? baseRadius : baseRadius * SNAKE_BODY_RADIUS_MULTIPLIER;
-            const nextSegment = snake.body[i-1] || segment;
-
+            
             const gradient = ctx.createRadialGradient(segment.x, segment.y, radius * 0.1, segment.x, segment.y, radius);
             gradient.addColorStop(0, `hsl(${parseInt(snake.color.match(/(\d+)/)![0])}, 100%, 85%)`);
             gradient.addColorStop(1, snake.color);
@@ -428,7 +448,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
         
         ctx.shadowBlur = 0;
 
-        // Eyes
         const head = snake.body[0];
         const angle = snake.currentAngle;
         const eyeRadius = baseRadius * 0.2;
@@ -450,6 +469,10 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
     });
     
     ctx.restore();
+
+    if (controlMode === ControlMode.TOUCH) {
+      drawJoystick(ctx);
+    }
   };
 
   const gameLoop = useCallback((timestamp: number) => {
@@ -458,7 +481,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
     update(deltaTime);
     draw();
     gameLoopRef.current = requestAnimationFrame(gameLoop);
-  }, []);
+  }, [controlMode]); // Add controlMode dependency
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -472,38 +495,87 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
     const handleMouseMove = (e: MouseEvent) => {
         gameStateRef.current.mousePos = { x: e.clientX, y: e.clientY };
     };
-    const handleTouchMove = (e: TouchEvent) => {
-        if (e.touches[0]) {
-            gameStateRef.current.mousePos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        }
-        e.preventDefault();
-    };
-    
     const handlePointerDown = () => {
         if(gameStateRef.current.player) gameStateRef.current.player.isBoosting = true;
     }
     const handlePointerUp = () => {
         if(gameStateRef.current.player) gameStateRef.current.player.isBoosting = false;
     }
+    
+    // Joystick Touch Handlers
+    const handleTouchStart = (e: TouchEvent) => {
+      e.preventDefault();
+      const { joystick, player } = gameStateRef.current;
+      if (joystick.active) return;
+      const touch = e.changedTouches[0];
+      if (!touch || !player) return;
 
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('touchmove', handleTouchMove, { passive: false });
-    window.addEventListener('mousedown', handlePointerDown);
-    window.addEventListener('mouseup', handlePointerUp);
-    window.addEventListener('touchstart', handlePointerDown);
-    window.addEventListener('touchend', handlePointerUp);
+      joystick.active = true;
+      joystick.touchId = touch.identifier;
+      joystick.base = { x: window.innerWidth - 100, y: window.innerHeight - 100 };
+      joystick.knob = { x: touch.clientX, y: touch.clientY };
+    }
+
+    const handleTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      const { joystick, player } = gameStateRef.current;
+      if (!joystick.active || !player) return;
+      
+      const touch = Array.from(e.changedTouches).find(t => t.identifier === joystick.touchId);
+      if (!touch) return;
+
+      const dx = touch.clientX - joystick.base.x;
+      const dy = touch.clientY - joystick.base.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const angle = Math.atan2(dy, dx);
+      
+      const maxDist = joystick.baseRadius - joystick.knobRadius;
+      if(dist > maxDist) {
+        joystick.knob.x = joystick.base.x + Math.cos(angle) * maxDist;
+        joystick.knob.y = joystick.base.y + Math.sin(angle) * maxDist;
+        player.isBoosting = true;
+      } else {
+        joystick.knob.x = touch.clientX;
+        joystick.knob.y = touch.clientY;
+        player.isBoosting = false;
+      }
+    }
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      const { joystick, player } = gameStateRef.current;
+      if (!joystick.active || !player) return;
+
+      const touch = Array.from(e.changedTouches).find(t => t.identifier === joystick.touchId);
+      if (!touch) return;
+
+      joystick.active = false;
+      joystick.touchId = null;
+      joystick.knob = joystick.base;
+      player.isBoosting = false;
+    }
+
+    if(controlMode === ControlMode.POINTER) {
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mousedown', handlePointerDown);
+        window.addEventListener('mouseup', handlePointerUp);
+    } else { // TOUCH
+        window.addEventListener('touchstart', handleTouchStart, { passive: false });
+        window.addEventListener('touchmove', handleTouchMove, { passive: false });
+        window.addEventListener('touchend', handleTouchEnd);
+        window.addEventListener('touchcancel', handleTouchEnd);
+    }
 
     return () => {
       cancelAnimationFrame(gameLoopRef.current);
       window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('mousedown', handlePointerDown);
       window.removeEventListener('mouseup', handlePointerUp);
-      window.removeEventListener('touchstart', handlePointerDown);
-      window.removeEventListener('touchend', handlePointerUp);
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('touchcancel', handleTouchEnd);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [controlMode, gameLoop, initializeGame]);
 
   return <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full" />;
 };

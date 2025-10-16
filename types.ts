@@ -16,6 +16,11 @@ export enum NPCBehavior {
   ATTACK_PLAYER,
 }
 
+export enum ControlMode {
+  POINTER,
+  TOUCH,
+}
+
 export interface Snake {
   id: number;
   name: string;
