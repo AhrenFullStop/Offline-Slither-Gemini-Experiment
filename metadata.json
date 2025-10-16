@@ -1,0 +1,5 @@
+{
+  "name": "Offline Slither",
+  "description": "A simple, offline slither.io style game where players control a snake that grows by consuming energy. The game features NPC snakes with various behaviors, a large map, interactive zoom, and a local high score leaderboard.",
+  "requestFramePermissions": []
+}
