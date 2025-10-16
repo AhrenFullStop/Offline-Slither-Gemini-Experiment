@@ -33,9 +33,10 @@ interface GameCanvasProps {
   onSnakesUpdate: (snakes: Snake[]) => void;
   zoomLevel: number;
   controlMode: ControlMode;
+  isBoosting: boolean;
 }
 
-const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesUpdate, zoomLevel, controlMode }) => {
+const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesUpdate, zoomLevel, controlMode, isBoosting }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameLoopRef = useRef<number>(0);
 
@@ -484,6 +485,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
   }, [controlMode]); // Add controlMode dependency
 
   useEffect(() => {
+    if (gameStateRef.current.player) {
+      gameStateRef.current.player.isBoosting = isBoosting;
+    }
+  }, [isBoosting]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     canvas.width = window.innerWidth;
@@ -518,8 +525,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
 
     const handleTouchMove = (e: TouchEvent) => {
       e.preventDefault();
-      const { joystick, player } = gameStateRef.current;
-      if (!joystick.active || !player) return;
+      const { joystick } = gameStateRef.current;
+      if (!joystick.active) return;
       
       const touch = Array.from(e.changedTouches).find(t => t.identifier === joystick.touchId);
       if (!touch) return;
@@ -533,17 +540,15 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
       if(dist > maxDist) {
         joystick.knob.x = joystick.base.x + Math.cos(angle) * maxDist;
         joystick.knob.y = joystick.base.y + Math.sin(angle) * maxDist;
-        player.isBoosting = true;
       } else {
         joystick.knob.x = touch.clientX;
         joystick.knob.y = touch.clientY;
-        player.isBoosting = false;
       }
     }
 
     const handleTouchEnd = (e: TouchEvent) => {
-      const { joystick, player } = gameStateRef.current;
-      if (!joystick.active || !player) return;
+      const { joystick } = gameStateRef.current;
+      if (!joystick.active) return;
 
       const touch = Array.from(e.changedTouches).find(t => t.identifier === joystick.touchId);
       if (!touch) return;
@@ -551,7 +556,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
       joystick.active = false;
       joystick.touchId = null;
       joystick.knob = joystick.base;
-      player.isBoosting = false;
     }
 
     if(controlMode === ControlMode.POINTER) {

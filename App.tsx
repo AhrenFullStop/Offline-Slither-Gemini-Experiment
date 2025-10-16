@@ -77,7 +77,7 @@ const StartMenu: React.FC<MenuProps> = ({ onStart, controlMode, onControlChange 
             ) : (
                 <ul className="list-disc list-inside space-y-1 text-gray-200">
                     <li><span className="font-semibold text-cyan-400">Move:</span> Use the virtual joystick (bottom-right).</li>
-                    <li><span className="font-semibold text-cyan-400">Boost:</span> Push joystick to its edge to speed up.</li>
+                    <li><span className="font-semibold text-cyan-400">Boost:</span> Press the dedicated Boost button.</li>
                     <li><span className="font-semibold text-cyan-400">Zoom:</span> Use on-screen buttons.</li>
                 </ul>
             )}
@@ -126,10 +126,10 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ highScores, currentScore }) =
 interface MinimapProps {
     playerSnake: Snake | null;
     allSnakes: Snake[];
+    size: number;
 }
-const Minimap: React.FC<MinimapProps> = ({ playerSnake, allSnakes }) => {
+const Minimap: React.FC<MinimapProps> = ({ playerSnake, allSnakes, size }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const size = 150; // size of the minimap in pixels
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -159,7 +159,7 @@ const Minimap: React.FC<MinimapProps> = ({ playerSnake, allSnakes }) => {
         });
         ctx.shadowBlur = 0;
 
-    }, [allSnakes]);
+    }, [allSnakes, size]);
 
     return <canvas ref={canvasRef} width={size} height={size} className="rounded-lg border-2 border-slate-700/50" />;
 };
@@ -170,24 +170,28 @@ interface HudProps {
     allSnakes: Snake[];
     onZoomIn: () => void;
     onZoomOut: () => void;
+    controlMode: ControlMode;
+    onBoostStart: () => void;
+    onBoostEnd: () => void;
 }
-const HUD: React.FC<HudProps> = ({ score, allSnakes, onZoomIn, onZoomOut }) => {
+const HUD: React.FC<HudProps> = ({ score, allSnakes, onZoomIn, onZoomOut, controlMode, onBoostStart, onBoostEnd }) => {
     const topSnakes = [...allSnakes].sort((a,b) => b.score - a.score).slice(0, 5);
     const playerSnake = allSnakes.find(s => s.isPlayer) || null;
+    const isMobile = controlMode === ControlMode.TOUCH;
 
     return (
         <>
             {/* Top-left: Score & Zoom */}
             <div className="absolute top-4 left-4 text-white z-10 orbitron" style={{ textShadow: '0 0 5px black' }}>
-                <h2 className="text-2xl font-bold">Mass: {score}</h2>
+                <h2 className={`font-bold ${isMobile ? 'text-xl' : 'text-2xl'}`}>Mass: {score}</h2>
                 <div className="flex flex-col items-start pointer-events-auto mt-4">
-                    <button onClick={onZoomIn} className="bg-slate-800 bg-opacity-50 hover:bg-opacity-75 rounded-full w-10 h-10 flex items-center justify-center text-2xl font-bold mb-2 transition-opacity border-2 border-slate-700">+</button>
-                    <button onClick={onZoomOut} className="bg-slate-800 bg-opacity-50 hover:bg-opacity-75 rounded-full w-10 h-10 flex items-center justify-center text-2xl font-bold transition-opacity border-2 border-slate-700">-</button>
+                    <button onClick={onZoomIn} className={`bg-slate-800 bg-opacity-50 hover:bg-opacity-75 rounded-full flex items-center justify-center font-bold mb-2 transition-opacity border-2 border-slate-700 ${isMobile ? 'w-8 h-8 text-xl' : 'w-10 h-10 text-2xl'}`}>+</button>
+                    <button onClick={onZoomOut} className={`bg-slate-800 bg-opacity-50 hover:bg-opacity-75 rounded-full flex items-center justify-center font-bold transition-opacity border-2 border-slate-700 ${isMobile ? 'w-8 h-8 text-xl' : 'w-10 h-10 text-2xl'}`}>-</button>
                 </div>
             </div>
 
             {/* Top-right: Leaderboard */}
-            <div className="absolute top-4 right-4 text-white z-10 w-64 bg-slate-900 bg-opacity-25 p-3 rounded-lg text-sm orbitron" style={{ backdropFilter: 'blur(2px)' }}>
+            <div className={`absolute top-4 right-4 text-white z-10 bg-slate-900 bg-opacity-25 p-3 rounded-lg orbitron ${isMobile ? 'w-40 text-xs p-2' : 'w-64 text-sm'}`} style={{ backdropFilter: 'blur(2px)' }}>
                 <h3 className="text-lg font-bold text-center mb-2 text-cyan-300">Top Serpents</h3>
                 <ol className="space-y-1">
                     {topSnakes.map((snake, index) => (
@@ -199,9 +203,18 @@ const HUD: React.FC<HudProps> = ({ score, allSnakes, onZoomIn, onZoomOut }) => {
                 </ol>
             </div>
 
-            {/* Bottom-left: Minimap */}
-            <div className="absolute bottom-4 left-4 z-10 pointer-events-auto">
-                <Minimap playerSnake={playerSnake} allSnakes={allSnakes} />
+            {/* Bottom-left area */}
+            <div className="absolute bottom-4 left-4 z-10 pointer-events-auto flex flex-col items-center">
+                {isMobile && (
+                    <button
+                        onTouchStart={onBoostStart}
+                        onTouchEnd={onBoostEnd}
+                        className="w-16 h-16 bg-cyan-500/50 rounded-full mb-4 flex items-center justify-center text-white font-bold text-lg border-2 border-cyan-400 active:bg-cyan-500/80"
+                    >
+                        BOOST
+                    </button>
+                )}
+                 <Minimap playerSnake={playerSnake} allSnakes={allSnakes} size={isMobile ? 100 : 150} />
             </div>
         </>
     );
@@ -221,10 +234,15 @@ const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(GameState.MENU);
   const [score, setScore] = useState(0);
   const [allSnakes, setAllSnakes] = useState<Snake[]>([]);
-  const [zoomLevel, setZoomLevel] = useState(1.0);
+  const [isBoosting, setIsBoosting] = useState(false);
+  
   const [highScores, setHighScores] = useLocalStorage<HighScore[]>('slither-high-scores', []);
   const [controlMode, setControlMode] = useState<ControlMode>(() => 
     detectTouchDevice() ? ControlMode.TOUCH : ControlMode.POINTER
+  );
+
+  const [zoomLevel, setZoomLevel] = useState(() => 
+    detectTouchDevice() ? 0.7 : 1.0
   );
 
   const handleStart = () => {
@@ -273,8 +291,23 @@ const App: React.FC = () => {
     <div className="w-screen h-screen overflow-hidden bg-gray-900 font-sans" style={{fontFamily: "'Roboto', sans-serif"}}>
       {gameState === GameState.PLAYING && (
         <>
-          <HUD score={score} allSnakes={allSnakes} onZoomIn={() => handleZoom('in')} onZoomOut={() => handleZoom('out')} />
-          <GameCanvas setScore={setScore} onGameOver={handleGameOver} onSnakesUpdate={setAllSnakes} zoomLevel={zoomLevel} controlMode={controlMode} />
+          <HUD 
+            score={score} 
+            allSnakes={allSnakes} 
+            onZoomIn={() => handleZoom('in')} 
+            onZoomOut={() => handleZoom('out')}
+            controlMode={controlMode}
+            onBoostStart={() => setIsBoosting(true)}
+            onBoostEnd={() => setIsBoosting(false)}
+          />
+          <GameCanvas 
+            setScore={setScore} 
+            onGameOver={handleGameOver} 
+            onSnakesUpdate={setAllSnakes} 
+            zoomLevel={zoomLevel} 
+            controlMode={controlMode}
+            isBoosting={isBoosting}
+          />
         </>
       )}
       {gameState === GameState.MENU && <StartMenu onStart={handleStart} controlMode={controlMode} onControlChange={setControlMode} />}
