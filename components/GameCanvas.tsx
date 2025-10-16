@@ -420,7 +420,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
         ctx.globalAlpha = alpha;
         ctx.fillStyle = f.color;
         ctx.shadowColor = f.color;
-        ctx.shadowBlur = 10; // Reduced from 15
+        ctx.shadowBlur = 10; 
         ctx.fill();
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 1.0;
@@ -431,7 +431,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ setScore, onGameOver, onSnakesU
         const baseRadius = SNAKE_HEAD_RADIUS + snake.score * SNAKE_SCORE_TO_RADIUS_RATIO;
         
         ctx.shadowColor = snake.color;
-        ctx.shadowBlur = 12; // Reduced from 20
+        ctx.shadowBlur = 6; 
 
         for (let i = snake.body.length - 1; i >= 0; i--) {
             const segment = snake.body[i];
